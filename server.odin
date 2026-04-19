@@ -1,5 +1,6 @@
 package http
 
+import "base:intrinsics"
 import "base:runtime"
 
 import "core:bufio"
@@ -16,6 +17,7 @@ import "core:slice"
 import "core:sync"
 import "core:thread"
 import "core:time"
+import mpsc "internal/mpsc"
 
 Server_Opts :: struct {
 	// Whether the server should accept every request that sends a "Expect: 100-continue" header automatically.
@@ -98,6 +100,9 @@ Server_Thread :: struct {
 	conns:      map[net.TCP_Socket]^Connection,
 	state:      Server_State,
 	accept:     ^nbio.Operation,
+
+	resume_queue:  mpsc.Queue(Response), // async resume queue — consumer: this io thread
+	async_pending: int,                  // atomic; > 0 while any request is between go_async and resume
 
 	// free_temp_blocks:       map[int]queue.Queue(^Block),
 	// free_temp_blocks_count: int,
@@ -366,6 +371,7 @@ Connection :: struct {
 	scanner:        Scanner,
 	temp_allocator: virtual.Arena,
 	loop:           Loop,
+	owning_thread:  ^Server_Thread, // set once in on_accept, never changes
 }
 
 // Loop/request cycle state.

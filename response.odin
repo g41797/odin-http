@@ -2,6 +2,7 @@ package http
 
 import "core:bytes"
 import "core:io"
+import list "core:container/intrusive/list"
 import "core:log"
 import "core:mem/virtual"
 import "core:nbio"
@@ -9,6 +10,9 @@ import "core:slice"
 import "core:strconv"
 
 Response :: struct {
+	node:             list.Node,    // intrusive MPSC node — must be first field (mpsc.Queue constraint)
+	async_handler:    ^Handler,     // exact handler that called go_async (middleware-safe resume)
+
 	// Add your headers and cookies here directly.
 	headers:          Headers,
 	cookies:          [dynamic]Cookie,
@@ -25,6 +29,8 @@ Response :: struct {
 	// connection (maybe a small buffer in this struct).
 	_buf:             bytes.Buffer,
 	_heading_written: bool,
+
+	async_state:      rawptr,       // nil = sync; non-nil = async pending
 }
 
 response_init :: proc(r: ^Response, allocator := context.allocator) {
