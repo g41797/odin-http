@@ -32,6 +32,9 @@ Response :: struct {
 
 	async_state:      rawptr,       // nil = sync; non-nil = async pending
 }
+// Compile-time layout guard: mpsc.Queue uses container_of with zero offset for the node field.
+// If node ever moves from first position this assertion fires at compile time, preventing silent corruption.
+#assert(offset_of(Response, node) == 0, "Response.node must remain the first field — required by mpsc.Queue")
 
 response_init :: proc(r: ^Response, allocator := context.allocator) {
 	r.status             = .Not_Found
