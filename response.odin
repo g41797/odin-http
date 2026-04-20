@@ -10,8 +10,8 @@ import "core:slice"
 import "core:strconv"
 
 Response :: struct {
-	node:             list.Node,    // intrusive MPSC node — must be first field (mpsc.Queue constraint)
-	async_handler:    ^Handler,     // exact handler that called go_async (middleware-safe resume)
+	node:             list.Node,    // required for the resume queue
+	async_handler:    ^Handler,     // exact handler to resume (middleware-safe)
 
 	// Add your headers and cookies here directly.
 	headers:          Headers,
@@ -30,7 +30,7 @@ Response :: struct {
 	_buf:             bytes.Buffer,
 	_heading_written: bool,
 
-	async_state:      rawptr,       // nil = sync; non-nil = async pending
+	async_state:      rawptr,       // nil means sync; non-nil means async is pending
 }
 // Compile-time layout guard: mpsc.Queue uses container_of with zero offset for the node field.
 // If node ever moves from first position this assertion fires at compile time, preventing silent corruption.
@@ -295,6 +295,12 @@ _response_write_heading :: proc(r: ^Response, content_length: int) {
 // Closes the connection or starts the handling of the next request.
 @(private)
 response_send :: proc(r: ^Response, conn: ^Connection, loc := #caller_location) {
+	// If the connection is already closing or closed, just clean up.
+	if conn.state >= .Closing || conn.state == .Will_Close {
+		clean_request_loop(conn)
+		return
+	}
+
 	assert(!r.sent, "response has already been sent", loc)
 	r.sent = true
 

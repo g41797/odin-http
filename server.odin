@@ -188,6 +188,7 @@ listen_and_serve :: proc(
 
 _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 	td = ttd
+	mpsc.init(&td.resume_queue)
 
 	td.conns = make(map[net.TCP_Socket]^Connection)
 	// td.free_temp_blocks = make(map[int]queue.Queue(^Block))
@@ -207,7 +208,10 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 	log.debug("starting event loop")
 	td.state = .Serving
 	for {
-		if atomic_load(&s.closing) { _server_thread_shutdown(s) }
+		if atomic_load(&s.closing) && intrinsics.atomic_load(&td.async_pending) == 0 {
+			_server_thread_shutdown(s)
+			break
+		}
 		if td.state == .Closed { break }
 		if td.state == .Cleaning { continue }
 
@@ -215,6 +219,42 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 		if err != nil {
 			log.errorf("non-blocking io tick error: %v", err)
 			break
+		}
+
+		// Async resume loop - handles finished background work.
+		for {
+			res := mpsc.pop(&td.resume_queue)
+			if res == nil {
+				stall := false
+				for _ in 0 ..< 3 {
+					res = mpsc.pop(&td.resume_queue)
+					if res != nil {
+						stall = true
+						break
+					}
+				}
+				if !stall {
+					break
+				}
+			}
+
+			// Use the connection arena for the handler.
+			old_temp := context.temp_allocator
+			context.temp_allocator = virtual.arena_allocator(&res._conn.temp_allocator)
+
+			// Call the original handler to avoid running middleware twice.
+			h := res.async_handler if res.async_handler != nil else &res._conn.server.handler
+			h.handle(h, &res._conn.loop.req, res)
+
+			intrinsics.atomic_add(&td.async_pending, -1)
+			context.temp_allocator = old_temp
+
+			// Safety: handler must clear async_state before returning.
+			if res.async_state != nil {
+				log.warn("async handler left async_state non-nil after resume — cleared")
+				res.async_state = nil
+			}
+			res.async_handler = nil // reset for next request
 		}
 	}
 
@@ -442,6 +482,7 @@ on_accept :: proc(op: ^nbio.Operation, server: ^Server) {
 	c.server = server
 	c.socket = op.accept.client
 	c.loop.req.client = op.accept.client_endpoint
+	c.owning_thread = td
 
 	td.conns[c.socket] = c
 
@@ -607,6 +648,7 @@ conn_handle_req :: proc(c: ^Connection, allocator := context.temp_allocator) {
 				rline.method = .Get
 			}
 
+			context.temp_allocator = virtual.arena_allocator(&l.conn.temp_allocator)
 			l.conn.server.handler.handle(&l.conn.server.handler, &l.req, &l.res)
 		}
 	}
