@@ -14,6 +14,11 @@ mark_async :: proc(h: ^Handler, res: ^Response, state: rawptr) {
 		return
 	}
 
+	if atomic_load(&res._conn.server.closing) {
+		log.warn("mark_async: server is closing, ignoring")
+		return
+	}
+
 	if h != nil {
 		res.async_handler = h
 	} else if res.async_handler == nil {
@@ -51,7 +56,15 @@ cancel_async :: proc(res: ^Response) {
 // Tell the io thread that background work is done.
 // Safe to call from any thread. Do not touch 'res' after calling this.
 resume :: proc(res: ^Response) {
-	if res == nil {
+	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
+		log.error("resume: invalid response or connection state")
+		return
+	}
+
+	if atomic_load(&res._conn.server.closing) {
+		// If server is closing, we might have already force-canceled in _server_thread_shutdown.
+		// The connection might even be destroyed.
+		log.warn("resume: server is closing, ignoring")
 		return
 	}
 
