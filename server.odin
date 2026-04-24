@@ -207,11 +207,25 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 
 	log.debug("starting event loop")
 	td.state = .Serving
+	shutdown_start: time.Tick
 	for {
-		if atomic_load(&s.closing) && intrinsics.atomic_load(&td.async_pending) == 0 {
-			_server_thread_shutdown(s)
-			break
+		if atomic_load(&s.closing) {
+			if intrinsics.atomic_load(&td.async_pending) == 0 {
+				_server_thread_shutdown(s)
+				break
+			}
+
+			if shutdown_start == {} {
+				shutdown_start = time.tick_now()
+			}
+
+			if time.tick_since(shutdown_start) > 5 * time.Second {
+				log.warnf("shutdown: %d async requests still pending after 5s timeout — force closing", td.async_pending)
+				_server_thread_shutdown(s)
+				break
+			}
 		}
+
 		if td.state == .Closed { break }
 		if td.state == .Cleaning { continue }
 
@@ -293,18 +307,14 @@ _server_thread_shutdown :: proc(s: ^Server, loc := #caller_location) {
 
 	td.state = .Closing
 	defer delete(td.conns)
-	// defer {
-	// 	blocks: int
-	// 	for _, &bucket in td.free_temp_blocks {
-	// 		for block in queue.pop_front_safe(&bucket) {
-	// 			blocks += 1
-	// 			free(block)
-	// 		}
-	// 		queue.destroy(&bucket)
-	// 	}
-	// 	delete(td.free_temp_blocks)
-	// 	log.infof("had %i temp blocks to spare", blocks)
-	// }
+
+	// Force-cancel any pending async requests to clear the counter.
+	for _, conn in td.conns {
+		if conn.loop.res.async_state != nil {
+			log.warnf("shutdown: force canceling async request on connection %i", conn.socket)
+			cancel_async(&conn.loop.res)
+		}
+	}
 
 	for {
 		for sock, conn in td.conns {

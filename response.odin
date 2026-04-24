@@ -366,6 +366,10 @@ on_response_sent :: proc(op: ^nbio.Operation, conn: ^Connection) {
 // Response has been sent, clean up and close/handle next.
 @(private)
 clean_request_loop :: proc(conn: ^Connection, close: Maybe(bool) = nil) {
+	if conn.loop.res.async_state != nil {
+		cancel_async(&conn.loop.res)
+	}
+
 	context.temp_allocator = virtual.arena_allocator(&conn.temp_allocator)
 
 	// blocks, size, used := allocator_free_all(&conn.temp_allocator)
