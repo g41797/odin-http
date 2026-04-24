@@ -229,7 +229,7 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 		if td.state == .Closed { break }
 		if td.state == .Cleaning { continue }
 
-		err := nbio.tick()
+		err := nbio.tick(1 * time.Millisecond)
 		if err != nil {
 			log.errorf("non-blocking io tick error: %v", err)
 			break

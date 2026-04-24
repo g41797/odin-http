@@ -61,13 +61,6 @@ resume :: proc(res: ^Response) {
 		return
 	}
 
-	if atomic_load(&res._conn.server.closing) {
-		// If server is closing, we might have already force-canceled in _server_thread_shutdown.
-		// The connection might even be destroyed.
-		log.warn("resume: server is closing, ignoring")
-		return
-	}
-
 	td := res._conn.owning_thread
 	msg: Maybe(^Response) = res
 	if mpsc.push(&td.resume_queue, &msg) {
