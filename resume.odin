@@ -9,6 +9,11 @@ import "core:log"
 // Call this from your handler or body callback on the io thread.
 // Pass 'h' to make sure middleware resume works correctly.
 mark_async :: proc(h: ^Handler, res: ^Response, state: rawptr) {
+	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
+		log.error("mark_async: invalid response or connection state")
+		return
+	}
+
 	if h != nil {
 		res.async_handler = h
 	} else if res.async_handler == nil {
@@ -27,6 +32,11 @@ mark_async :: proc(h: ^Handler, res: ^Response, state: rawptr) {
 // This fixes the pending counter so the server can shut down later.
 // You must also send an error response to the client.
 cancel_async :: proc(res: ^Response) {
+	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
+		log.error("cancel_async: invalid response or connection state")
+		return
+	}
+
 	if res.async_state == nil {
 		log.error("cancel_async called but response is not async. Ignoring to protect counter.")
 		return

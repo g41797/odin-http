@@ -471,13 +471,22 @@ on_accept :: proc(op: ^nbio.Operation, server: ^Server) {
 			return
 		}
 
-		fmt.panicf("accept error: %v", op.accept.err)
+		if !atomic_load(&server.closing) {
+			fmt.panicf("accept error: %v", op.accept.err)
+		}
+		return
 	}
 
 	// Accept next connection.
 	td.accept = nbio.accept_poly(server.tcp_sock, server, on_accept)
 
 	c := new(Connection, server.conn_allocator)
+	if c == nil {
+		log.error("on_accept: failed to allocate connection")
+		net.close(op.accept.client)
+		return
+	}
+
 	c.state = .New
 	c.server = server
 	c.socket = op.accept.client
