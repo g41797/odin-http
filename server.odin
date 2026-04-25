@@ -319,7 +319,9 @@ _server_thread_shutdown :: proc(s: ^Server, loc := #caller_location) {
 	for {
 		for sock, conn in td.conns {
 			#partial switch conn.state {
-			case .Active, .New, .Idle, .Pending:
+			case .Active:
+				log.debugf("shutdown: connection %i active, waiting for response send", sock)
+			case .New, .Idle, .Pending:
 				log.infof("shutdown: closing connection %i", sock)
 				connection_close(conn)
 			case .Closing:
@@ -333,8 +335,8 @@ _server_thread_shutdown :: proc(s: ^Server, loc := #caller_location) {
 			break
 		}
 
-		err := nbio.tick()
-		fmt.assertf(err == nil, "IO tick error during shutdown: %v")
+		err := nbio.tick(1 * time.Millisecond)
+		fmt.assertf(err == nil, "IO tick error during shutdown: %v", err)
 	}
 
 	td.state = .Cleaning
@@ -523,6 +525,8 @@ conn_handle_reqs :: proc(c: ^Connection) {
 
 @(private)
 conn_handle_req :: proc(c: ^Connection, allocator := context.temp_allocator) {
+	if atomic_load(&c.server.closing) { return }
+
 	on_rline1 :: proc(loop: rawptr, token: string, err: bufio.Scanner_Error) {
 		l := cast(^Loop)loop
 

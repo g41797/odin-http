@@ -357,7 +357,7 @@ response_send_got_body :: proc(r: ^Response, will_close: bool) {
 on_response_sent :: proc(op: ^nbio.Operation, conn: ^Connection) {
 	if op.send.err != nil {
 		if conn.state < .Closing {
-			log.errorf("could not send response: %v", op.send.err)
+			log.warnf("could not send response: %v", op.send.err)
 		}
 		if !connection_set_state(conn, .Will_Close) { return }
 	}
