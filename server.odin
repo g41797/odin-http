@@ -319,9 +319,7 @@ _server_thread_shutdown :: proc(s: ^Server, loc := #caller_location) {
 	for {
 		for sock, conn in td.conns {
 			#partial switch conn.state {
-			case .Active:
-				log.infof("shutdown: connection %i still active", sock)
-			case .New, .Idle, .Pending:
+			case .Active, .New, .Idle, .Pending:
 				log.infof("shutdown: closing connection %i", sock)
 				connection_close(conn)
 			case .Closing:
