@@ -669,7 +669,6 @@ conn_handle_req :: proc(c: ^Connection, allocator := context.temp_allocator) {
 				rline.method = .Get
 			}
 
-			context.temp_allocator = virtual.arena_allocator(&l.conn.temp_allocator)
 			l.conn.server.handler.handle(&l.conn.server.handler, &l.req, &l.res)
 		}
 	}

@@ -148,9 +148,6 @@ scanner_scan :: proc(
 			s.callback = nil
 			s.user_data = nil
 			
-			if s.connection != nil {
-				context.temp_allocator = virtual.arena_allocator(&s.connection.temp_allocator)
-			}
 			callback(user_data, string(token), s._err)
 			return
 		}
