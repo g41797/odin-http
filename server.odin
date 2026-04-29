@@ -22,11 +22,11 @@ import mpsc "internal/mpsc"
 Server_Opts :: struct {
 	// Whether the server should accept every request that sends a "Expect: 100-continue" header automatically.
 	// Defaults to true.
-	auto_expect_continue:    bool,
+	auto_expect_continue: bool,
 	// When this is true, any HEAD request is automatically redirected to the handler as a GET request.
 	// Then, when the response is sent, the body is removed from the response.
 	// Defaults to true.
-	redirect_head_to_get:    bool,
+	redirect_head_to_get: bool,
 	// Limit the maximum number of bytes to read for the request line (first line of request containing the URI).
 	// The HTTP spec does not specify any limits but in practice it is safer.
 	// RFC 7230 3.1.1 says:
@@ -34,13 +34,13 @@ Server_Opts :: struct {
 	// practice.  It is RECOMMENDED that all HTTP senders and recipients
 	// support, at a minimum, request-line lengths of 8000 octets.
 	// defaults to 8000.
-	limit_request_line:      int,
+	limit_request_line:   int,
 	// Limit the length of the headers.
 	// The HTTP spec does not specify any limits but in practice it is safer.
 	// defaults to 8000.
-	limit_headers:           int,
+	limit_headers:        int,
 	// The thread count to use, defaults to your core count - 1.
-	thread_count:            int,
+	thread_count:         int,
 
 	// // The initial size of the temp_allocator for each connection, defaults to 256KiB and doubles
 	// // each time it needs to grow.
@@ -53,10 +53,10 @@ Server_Opts :: struct {
 }
 
 Default_Server_Opts := Server_Opts {
-	auto_expect_continue    = true,
-	redirect_head_to_get    = true,
-	limit_request_line      = 8000,
-	limit_headers           = 8000,
+	auto_expect_continue = true,
+	redirect_head_to_get = true,
+	limit_request_line   = 8000,
+	limit_headers        = 8000,
 	// initial_temp_block_cap  = 256 * mem.Kilobyte,
 	// max_free_blocks_queued  = 64,
 }
@@ -77,7 +77,6 @@ Server :: struct {
 	tcp_sock:       net.TCP_Socket,
 	conn_allocator: mem.Allocator,
 	handler:        Handler,
-
 	threads:        []Server_Thread,
 	// Once the server starts closing/shutdown this is set to true, all threads will check it
 	// and start their thread local shutdown procedure.
@@ -95,14 +94,13 @@ Server :: struct {
 }
 
 Server_Thread :: struct {
-	thread:     ^thread.Thread,
-	event_loop: ^nbio.Event_Loop,
-	conns:      map[net.TCP_Socket]^Connection,
-	state:      Server_State,
-	accept:     ^nbio.Operation,
-
+	thread:        ^thread.Thread,
+	event_loop:    ^nbio.Event_Loop,
+	conns:         map[net.TCP_Socket]^Connection,
+	state:         Server_State,
+	accept:        ^nbio.Operation,
 	resume_queue:  mpsc.Queue(Response), // async resume queue — consumer: this io thread
-	async_pending: int,                  // atomic; > 0 while any request is between go_async and resume
+	async_pending: int, // atomic; > 0 while any request is between go_async and resume
 
 	// free_temp_blocks:       map[int]queue.Queue(^Block),
 	// free_temp_blocks_count: int,
@@ -125,7 +123,9 @@ listen :: proc(
 	s: ^Server,
 	endpoint: net.Endpoint = Default_Endpoint,
 	opts: Server_Opts = Default_Server_Opts,
-) -> (err: net.Network_Error) {
+) -> (
+	err: net.Network_Error,
+) {
 	s.opts = opts
 	s.conn_allocator = context.allocator
 	// initial_block_cap = int(s.opts.initial_temp_block_cap)
@@ -145,7 +145,7 @@ listen :: proc(
 }
 
 serve :: proc(s: ^Server, h: Handler) -> (err: net.Network_Error) {
-	if atomic_load(&s.closing) { return }
+	if atomic_load(&s.closing) {return}
 	s.handler = h
 
 	if s.opts.thread_count == 0 {
@@ -170,7 +170,7 @@ serve :: proc(s: ^Server, h: Handler) -> (err: net.Network_Error) {
 
 	net.shutdown(s.tcp_sock, .Both)
 	net.close(s.tcp_sock)
-	for t in s.threads[1:] { thread.destroy(t.thread) }
+	for t in s.threads[1:] {thread.destroy(t.thread)}
 	delete(s.threads)
 
 	return nil
@@ -181,7 +181,9 @@ listen_and_serve :: proc(
 	h: Handler,
 	endpoint: net.Endpoint = Default_Endpoint,
 	opts: Server_Opts = Default_Server_Opts,
-) -> (err: net.Network_Error) {
+) -> (
+	err: net.Network_Error,
+) {
 	listen(s, endpoint, opts) or_return
 	return serve(s, h)
 }
@@ -220,14 +222,18 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 			}
 
 			if time.tick_since(shutdown_start) > 5 * time.Second {
-				log.warnf("shutdown: %d async requests still pending after 5s timeout — force closing", td.async_pending)
+				log.warnf(
+					"shutdown: %d async requests still pending after 5s timeout — force closing",
+					td.async_pending,
+				)
 				_server_thread_shutdown(s)
 				break
 			}
 		}
 
-		if td.state == .Closed { break }
-		if td.state == .Cleaning { continue }
+		if td.state == .Closed {break}
+
+		if td.state == .Cleaning {continue}
 
 		tick_ms := -1 if !atomic_load(&s.closing) else 1 * time.Millisecond
 		err := nbio.tick(tick_ms)
@@ -452,20 +458,28 @@ connection_close :: proc(c: ^Connection, loc := #caller_location) {
 	// to process the closing and receive any remaining data.
 	net.shutdown(c.socket, net.Shutdown_Manner.Send)
 
-	nbio.timeout_poly(Conn_Close_Delay, c, proc(_: ^nbio.Operation, c: ^Connection) {
-		nbio.close_poly(c.socket, c, proc(_: ^nbio.Operation, c: ^Connection) {
-			log.debugf("closed connection: %i", c.socket)
+	nbio.timeout_poly(
+		Conn_Close_Delay,
+		c,
+		proc(_: ^nbio.Operation, c: ^Connection) {
+			nbio.close_poly(
+				c.socket,
+				c,
+				proc(_: ^nbio.Operation, c: ^Connection) {
+					log.debugf("closed connection: %i", c.socket)
 
-			c.state = .Closed
+					c.state = .Closed
 
-			// allocator_destroy(&c.temp_allocator)
-			virtual.arena_destroy(&c.temp_allocator)
+					// allocator_destroy(&c.temp_allocator)
+					virtual.arena_destroy(&c.temp_allocator)
 
-			scanner_destroy(&c.scanner)
-			delete_key(&td.conns, c.socket)
-			free(c, c.server.conn_allocator)
-		})
-	})
+					scanner_destroy(&c.scanner)
+					delete_key(&td.conns, c.socket)
+					free(c, c.server.conn_allocator)
+				},
+			)
+		},
+	)
 }
 
 @(private)
@@ -526,12 +540,12 @@ conn_handle_reqs :: proc(c: ^Connection) {
 
 @(private)
 conn_handle_req :: proc(c: ^Connection, allocator := context.temp_allocator) {
-	if atomic_load(&c.server.closing) { return }
+	if atomic_load(&c.server.closing) {return}
 
 	on_rline1 :: proc(loop: rawptr, token: string, err: bufio.Scanner_Error) {
 		l := cast(^Loop)loop
 
-		if !connection_set_state(l.conn, .Active) { return }
+		if !connection_set_state(l.conn, .Active) {return}
 
 		if err != nil {
 			if err == .EOF {
@@ -700,7 +714,7 @@ server_date_start :: proc(s: ^Server) {
 // Updates the time and schedules itself for after a second.
 @(private)
 server_date_update :: proc(_: ^nbio.Operation, s: ^Server) {
-	if atomic_load(&s.closing) { return }
+	if atomic_load(&s.closing) {return}
 
 	nbio.timeout_poly(time.Second, s, server_date_update)
 
