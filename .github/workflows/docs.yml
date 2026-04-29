@@ -26,25 +26,20 @@ jobs:
     steps:
       - uses: laytan/setup-odin@v2
         with:
-          release: dev-2026-03
+          release: nightly
       - name: Report
         run: odin report
       - name: Get commonmark
         run: sudo apt-get install libcmark-dev
-      - uses: actions/checkout@v4
       - name: Get and build Odin docs generator
         run: |
-          if [ -f "./docs/odin-doc" ]; then
-            echo "odin-doc binary found in docs/, skipping build"
-            echo "$(pwd)/docs" >> $GITHUB_PATH
-          else
-            cd /home/runner
-            git clone https://github.com/odin-lang/pkg.odin-lang.org odin-doc
-            cd odin-doc
-            # The /home/runner/odin directory is in the PATH so output it there.
-            odin build . -out:/home/runner/odin/odin-doc
-            cd /home/runner
-          fi
+          cd /home/runner
+          git clone https://github.com/odin-lang/pkg.odin-lang.org odin-doc
+          cd odin-doc
+          # The /home/runner/odin directory is in the PATH so output it there.
+          odin build . -out:/home/runner/odin/odin-doc
+          cd /home/runner
+      - uses: actions/checkout@v4
       - name: Generate documentation
         run: ./docs/generate.sh
       - uses: actions/configure-pages@v3
