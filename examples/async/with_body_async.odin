@@ -1,9 +1,9 @@
 package async_examples
 
+import http "../.."
 import "core:mem"
 import "core:thread"
 import "core:time"
-import http "http:."
 
 Body_Context :: struct {
 	alloc: mem.Allocator,

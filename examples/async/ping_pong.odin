@@ -1,6 +1,6 @@
 package async_examples
 
-import http "http:."
+import http "../.."
 
 // Same-thread split pattern: both mark_async and resume are called on the IO thread
 // inside the body callback. No background thread is created.
