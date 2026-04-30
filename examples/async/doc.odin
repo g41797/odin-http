@@ -13,21 +13,21 @@ to send the response.
 
 The Split Handler Pattern
 
-One handler proc handles both invocations, distinguished by res.async_state:
+One handler proc handles both invocations, distinguished by res.work_data:
 
 	my_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Response) {
-	    if res.async_state == nil {
+	    if res.work_data == nil {
 	        // Part 1 (IO thread): allocate work struct, call mark_async,
 	        // start background work, return immediately.
 	    } else {
 	        // Part 2 (IO thread, resume call): read result from work struct,
 	        // send response, clean up.
-	        defer { res.async_state = nil }
+	        defer { res.work_data = nil }
 	    }
 	}
 
 The work struct is the only bridge between Part 1 and Part 2. Allocate it in Part 1,
-store its pointer via mark_async (which saves it in res.async_state), read it in Part 2,
+store its pointer via mark_async (which saves it in res.work_data), read it in Part 2,
 free it before Part 2 returns.
 
 ---
@@ -60,12 +60,12 @@ API
 mark_async(h, res, work)
 	Records h as the exact handler to call in Part 2 (middleware-safe: resumes the
 	handler that went async, not the head of the chain) and stores work in
-	res.async_state. Increments async_pending on the owning IO thread.
+	res.work_data. Increments async_pending on the owning IO thread.
 	Call this BEFORE starting background work.
 
 cancel_async(res)
 	Rolls back mark_async when background work fails to start. Decrements async_pending
-	and clears res.async_state. Must be paired with http.respond — omitting cancel_async
+	and clears res.work_data. Must be paired with http.respond — omitting cancel_async
 	leaves async_pending permanently incremented and graceful shutdown hangs forever;
 	omitting http.respond silently drops the request and the client waits forever.
 
@@ -109,10 +109,10 @@ Hard Rules
    never shuts down. Two calls: undefined behavior, likely a crash or corrupted
    connection.
 
-4. Set res.async_state = nil before Part 2 returns.
+4. Set res.work_data = nil before Part 2 returns.
    The server uses this field to detect when the async cycle is finished and to know
    it is safe to reset the connection for the next request.
-   Use defer { res.async_state = nil } at the top of the Part 2 branch.
+   Use defer { res.work_data = nil } at the top of the Part 2 branch.
 
 5. Part 2 runs even if the client disconnected. Always join the thread and free the
    work struct — the server requires Part 2 for cleanup regardless of connection state.

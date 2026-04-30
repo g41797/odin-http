@@ -270,10 +270,10 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 			intrinsics.atomic_add(&td.async_pending, -1)
 			context.temp_allocator = old_temp
 
-			// Safety: handler must clear async_state before returning.
-			if res.async_state != nil {
-				log.warn("async handler left async_state non-nil after resume — cleared")
-				res.async_state = nil
+			// Safety: handler must clear work_data before returning.
+			if res.work_data != nil {
+				log.warn("async handler left work_data non-nil after resume — cleared")
+				res.work_data = nil
 			}
 			res.async_handler = nil // reset for next request
 		}
@@ -317,7 +317,7 @@ _server_thread_shutdown :: proc(s: ^Server, loc := #caller_location) {
 
 	// Force-cancel any pending async requests to clear the counter.
 	for _, conn in td.conns {
-		if conn.loop.res.async_state != nil {
+		if conn.loop.res.work_data != nil {
 			log.warnf("shutdown: force canceling async request on connection %i", conn.socket)
 			cancel_async(&conn.loop.res)
 		}

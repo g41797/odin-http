@@ -17,7 +17,7 @@ Body_Work :: struct {
 }
 
 body_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Response) {
-	if res.async_state == nil {
+	if res.work_data == nil {
 		// Store h now — the body callback receives user_data (res), not h.
 		// Without this, the callback cannot call mark_async with the correct handler.
 		res.async_handler = h
@@ -27,14 +27,14 @@ body_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Response) 
 	}
 
 	// Part 2: resume call on the IO thread.
-	work := (^Body_Work)(res.async_state)
+	work := (^Body_Work)(res.work_data)
 	defer {
 		// thread.join is fast here — background thread already called resume (it finished).
-		// res.async_state = nil is mandatory before returning from Part 2.
+		// res.work_data = nil is mandatory before returning from Part 2.
 		thread.join(work.thread)
 		thread.destroy(work.thread)
 		free(work, work.alloc)
-		res.async_state = nil
+		res.work_data = nil
 	}
 
 	http.respond_plain(res, work.result)
@@ -75,7 +75,7 @@ body_callback :: proc(user_data: rawptr, body: http.Body, err: http.Body_Error) 
 
 body_background_proc :: proc(t: ^thread.Thread) {
 	res := (^http.Response)(t.data)
-	work := (^Body_Work)(res.async_state)
+	work := (^Body_Work)(res.work_data)
 
 	// context.temp_allocator is the per-connection arena — not thread-safe.
 	// Save and restore so this thread's allocation does not corrupt the IO thread's arena.

@@ -1,14 +1,15 @@
 package http
 
-import mpsc  "internal/mpsc"
-import nbio  "core:nbio"
 import "base:intrinsics"
 import "core:log"
+import nbio "core:nbio"
+import mpsc "internal/mpsc"
 
-// Start the async process for this request.
+// Mark handler as async, stores req. information for background worker and resume stage.
 // Call this from your handler or body callback on the io thread.
 // Pass 'h' to make sure middleware resume works correctly.
-mark_async :: proc(h: ^Handler, res: ^Response, state: rawptr) {
+// work_data - used by background worker, if it does not need it, 1 is used instead of...
+mark_async :: proc(h: ^Handler, res: ^Response, work_data: rawptr = rawptr(uintptr(1))) {
 	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
 		log.error("mark_async: invalid response or connection state")
 		return
@@ -28,7 +29,7 @@ mark_async :: proc(h: ^Handler, res: ^Response, state: rawptr) {
 		res.async_handler = &res._conn.server.handler // fallback
 	}
 
-	res.async_state = state
+	res.work_data = work_data
 	intrinsics.atomic_add(&res._conn.owning_thread.async_pending, 1)
 	log.debugf("mark_async: pending count is %d", intrinsics.atomic_load(&res._conn.owning_thread.async_pending))
 }
@@ -42,14 +43,14 @@ cancel_async :: proc(res: ^Response) {
 		return
 	}
 
-	if res.async_state == nil {
+	if res.work_data == nil {
 		log.error("cancel_async called but response is not async. Ignoring to protect counter.")
 		return
 	}
 
 	intrinsics.atomic_add(&res._conn.owning_thread.async_pending, -1)
 	log.debugf("cancel_async: pending count is %d", intrinsics.atomic_load(&res._conn.owning_thread.async_pending))
-	res.async_state = nil
+	res.work_data = nil
 	res.async_handler = nil
 }
 

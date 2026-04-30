@@ -11,7 +11,7 @@ Ping_Pong_Work :: struct {
 }
 
 ping_pong_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Response) {
-	if res.async_state == nil {
+	if res.work_data == nil {
 		// Store h now — the body callback receives user_data (res), not h.
 		// Without this, the callback cannot call mark_async with the correct handler.
 		res.async_handler = h
@@ -20,8 +20,8 @@ ping_pong_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Respo
 	}
 
 	// Part 2: resume call on the IO thread (same tick as callback).
-	work := (^Ping_Pong_Work)(res.async_state)
-	defer {res.async_state = nil}
+	work := (^Ping_Pong_Work)(res.work_data)
+	defer {res.work_data = nil}
 
 	if work.body == "ping" {
 		http.respond_plain(res, "pong")

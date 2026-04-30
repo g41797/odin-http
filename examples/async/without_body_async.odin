@@ -19,7 +19,7 @@ without_body_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Re
 	ctx := (^Without_Body_Context)(h.user_data)
 
 	// Part 1: first call on the IO thread.
-	if res.async_state == nil {
+	if res.work_data == nil {
 		work := new(Without_Body_Work, ctx.alloc)
 		work.alloc = ctx.alloc
 
@@ -44,14 +44,14 @@ without_body_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Re
 	}
 
 	// Part 2: resume call on the IO thread.
-	work := (^Without_Body_Work)(res.async_state)
+	work := (^Without_Body_Work)(res.work_data)
 	defer {
 		// thread.join here is fast — background thread already called resume, meaning it finished.
-		// res.async_state = nil tells the server the async cycle is finished.
+		// res.work_data = nil tells the server the async cycle is finished.
 		thread.join(work.thread)
 		thread.destroy(work.thread)
 		free(work, work.alloc)
-		res.async_state = nil
+		res.work_data = nil
 	}
 
 	http.respond_plain(res, work.result)
@@ -59,7 +59,7 @@ without_body_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Re
 
 without_body_background_proc :: proc(t: ^thread.Thread) {
 	res := (^http.Response)(t.data)
-	work := (^Without_Body_Work)(res.async_state)
+	work := (^Without_Body_Work)(res.work_data)
 
 	// context.temp_allocator is the per-connection arena — not thread-safe.
 	// Save and restore so this thread's allocation does not corrupt the IO thread's arena.
