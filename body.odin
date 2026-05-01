@@ -44,23 +44,15 @@ Key&value pairs are percent decoded and put in a map.
 */
 body_url_encoded :: proc(plain: Body, allocator := context.temp_allocator) -> (res: map[string]string, ok: bool) {
 
-	insert :: proc(
-		m: ^map[string]string,
-		plain: string,
-		keys: int,
-		vals: int,
-		end: int,
-		allocator := context.temp_allocator,
-	) -> bool {
+	insert :: proc(m: ^map[string]string, plain: string, keys: int, vals: int, end: int, allocator := context.temp_allocator) -> bool {
 		has_value := vals != -1
-		key_end := vals - 1 if has_value else end
-		key := plain[keys:key_end]
-		val := plain[vals:end] if has_value else ""
+		key_end   := vals - 1 if has_value else end
+		key       := plain[keys:key_end]
+		val       := plain[vals:end] if has_value else ""
 
 		// PERF: this could be a hot spot and I don't like that we allocate the decoded key and value here.
 		keye := (net.percent_decode(key, allocator) or_return) if strings.index_byte(key, '%') > -1 else key
-		vale :=
-			(net.percent_decode(val, allocator) or_return) if has_value && strings.index_byte(val, '%') > -1 else val
+		vale := (net.percent_decode(val, allocator) or_return) if has_value && strings.index_byte(val, '%') > -1 else val
 
 		m[keye] = vale
 		return true
@@ -68,7 +60,7 @@ body_url_encoded :: proc(plain: Body, allocator := context.temp_allocator) -> (r
 
 	count := 1
 	for b in plain {
-		if b == '&' {count += 1}
+		if b == '&' { count += 1 }
 	}
 
 	queries := make(map[string]string, count, allocator)
@@ -96,14 +88,10 @@ body_error_status :: proc(e: Body_Error) -> Status {
 	switch t in e {
 	case bufio.Scanner_Extra_Error:
 		switch t {
-		case .Too_Long:
-			return .Payload_Too_Large
-		case .Too_Short, .Bad_Read_Count:
-			return .Bad_Request
-		case .Negative_Advance, .Advanced_Too_Far:
-			return .Internal_Server_Error
-		case .None:
-			return .OK
+		case .Too_Long:                            return .Payload_Too_Large
+		case .Too_Short, .Bad_Read_Count:          return .Bad_Request
+		case .Negative_Advance, .Advanced_Too_Far: return .Internal_Server_Error
+		case .None:                                return .OK
 		case:
 			return .Internal_Server_Error
 		}
@@ -111,28 +99,17 @@ body_error_status :: proc(e: Body_Error) -> Status {
 		switch t {
 		case .EOF, .Unknown, .No_Progress, .Unexpected_EOF:
 			return .Bad_Request
-		case .Empty,
-		     .Short_Write,
-		     .Buffer_Full,
-		     .Short_Buffer,
-		     .Invalid_Write,
-		     .Negative_Read,
-		     .Invalid_Whence,
-		     .Invalid_Offset,
-		     .Invalid_Unread,
-		     .Negative_Write,
-		     .Negative_Count,
-		     .Permission_Denied,
-		     .No_Size,
-		     .Closed:
+		case .Empty, .Short_Write, .Buffer_Full, .Short_Buffer,
+		     .Invalid_Write, .Negative_Read, .Invalid_Whence, .Invalid_Offset,
+		     .Invalid_Unread, .Negative_Write, .Negative_Count,
+		     .Permission_Denied, .No_Size, .Closed:
 			return .Internal_Server_Error
 		case .None:
 			return .OK
 		case:
 			return .Internal_Server_Error
 		}
-	case:
-		unreachable()
+	case: unreachable()
 	}
 }
 
@@ -167,8 +144,8 @@ _body_length :: proc(req: ^Request, max_length: int = -1, user_data: rawptr, cb:
 
 	req._scanner.max_token_size = ilen
 
-	req._scanner.split = scan_num_bytes
-	req._scanner.split_data = rawptr(uintptr(ilen))
+	req._scanner.split          = scan_num_bytes
+	req._scanner.split_data     = rawptr(uintptr(ilen))
 
 	req._body_ok = true
 	scanner_scan(req._scanner, user_data, cb)
@@ -241,8 +218,8 @@ _body_chunked :: proc(req: ^Request, max_length: int = -1, user_data: rawptr, cb
 
 		s.req._scanner.max_token_size = size
 
-		s.req._scanner.split = scan_num_bytes
-		s.req._scanner.split_data = rawptr(uintptr(size))
+		s.req._scanner.split          = scan_num_bytes
+		s.req._scanner.split_data     = rawptr(uintptr(size))
 
 		scanner_scan(s.req._scanner, s, on_scan_chunk)
 	}
@@ -256,7 +233,7 @@ _body_chunked :: proc(req: ^Request, max_length: int = -1, user_data: rawptr, cb
 		}
 
 		s.req._scanner.max_token_size = bufio.DEFAULT_MAX_SCAN_TOKEN_SIZE
-		s.req._scanner.split = scan_lines
+		s.req._scanner.split          = scan_lines
 
 		strings.write_string(&s.buf, token)
 
@@ -315,6 +292,7 @@ _body_chunked :: proc(req: ^Request, max_length: int = -1, user_data: rawptr, cb
 		max_length: int,
 		user_data:  rawptr,
 		cb:         Body_Callback,
+
 		buf:        strings.Builder,
 	}
 
@@ -322,10 +300,10 @@ _body_chunked :: proc(req: ^Request, max_length: int = -1, user_data: rawptr, cb
 
 	s.buf.buf.allocator = context.temp_allocator
 
-	s.req = req
+	s.req        = req
 	s.max_length = max_length
-	s.user_data = user_data
-	s.cb = cb
+	s.user_data  = user_data
+	s.cb         = cb
 
 	s.req._scanner.split = scan_lines
 	scanner_scan(s.req._scanner, s, on_scan)
