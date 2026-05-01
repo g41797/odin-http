@@ -7,7 +7,7 @@ import mpsc "internal/mpsc"
 
 // Tells the server this request is going async.
 // Call from your handler or body callback on the IO thread, before starting background work.
-// Pass h — the second call needs the right handler pointer, especially in a middleware chain.
+// Pass h — the second call needs the right handler pointer, especially in a middleware chain
 // work_data is available in the second call via res.work_data; use 1 if you don't need it.
 mark_async :: proc(h: ^Handler, res: ^Response, work_data: rawptr = rawptr(uintptr(1))) {
 	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
@@ -34,7 +34,6 @@ mark_async :: proc(h: ^Handler, res: ^Response, work_data: rawptr = rawptr(uintp
 }
 
 // Undoes mark_async when background work fails to start.
-// Also call http.respond — one tells the server, the other tells the client.
 cancel_async :: proc(res: ^Response) {
 	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
 		log.error("cancel_async: invalid response or connection state")

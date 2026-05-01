@@ -242,7 +242,7 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 			break
 		}
 
-		// call the second handler part for any async completions since the last tick
+		// call the handler (second part) for any async completions
 		for {
 			res := mpsc.pop(&td.resume_queue)
 			if res == nil {
@@ -270,12 +270,8 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 			intrinsics.atomic_add(&td.async_pending, -1)
 			context.temp_allocator = old_temp
 
-			// handler must set work_data = nil before leaving the second call
-			if res.work_data != nil {
-				log.warn("async handler left work_data non-nil after resume — cleared")
-				res.work_data = nil
-			}
-			res.async_handler = nil // reset for next request
+			res.work_data = nil
+			res.async_handler = nil
 		}
 	}
 
