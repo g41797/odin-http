@@ -12,7 +12,7 @@ import "core:strconv"
 Response :: struct {
 	// ------ async "header"
 	using node:       list.Node,
-	async_handler:    ^Handler, // exact handler to resume
+	async_handler:    ^Handler, // handler to resume
 	work_data:        rawptr, // non-nil means async is pending
 	// ------
 
@@ -33,8 +33,7 @@ Response :: struct {
 	_buf:             bytes.Buffer,
 	_heading_written: bool,
 }
-// Compile-time layout guard: mpsc.Queue uses container_of with zero offset for the node field.
-// If node ever moves from first position this assertion fires at compile time, preventing silent corruption.
+// mpsc.Queue assumes node is at offset 0
 #assert(offset_of(Response, node) == 0, "Response.node must remain the first field — required by mpsc.Queue")
 
 response_init :: proc(r: ^Response, allocator := context.allocator) {

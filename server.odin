@@ -100,7 +100,7 @@ Server_Thread :: struct {
 	state:         Server_State,
 	accept:        ^nbio.Operation,
 	resume_queue:  mpsc.Queue(Response), // async resume queue — consumer: this io thread
-	async_pending: int, // atomic; > 0 while any request is between go_async and resume
+	async_pending: int, // atomic; counts requests between mark_async and resume
 
 	// free_temp_blocks:       map[int]queue.Queue(^Block),
 	// free_temp_blocks_count: int,
@@ -242,7 +242,7 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 			break
 		}
 
-		// Async resume loop - handles finished background work.
+		// call the second handler part for any async completions since the last tick
 		for {
 			res := mpsc.pop(&td.resume_queue)
 			if res == nil {
@@ -270,7 +270,7 @@ _server_thread_init :: proc(s: ^Server, ttd: ^Server_Thread) {
 			intrinsics.atomic_add(&td.async_pending, -1)
 			context.temp_allocator = old_temp
 
-			// Safety: handler must clear work_data before returning.
+			// handler must set work_data = nil before leaving the second call
 			if res.work_data != nil {
 				log.warn("async handler left work_data non-nil after resume — cleared")
 				res.work_data = nil
@@ -315,7 +315,7 @@ _server_thread_shutdown :: proc(s: ^Server, loc := #caller_location) {
 	td.state = .Closing
 	defer delete(td.conns)
 
-	// Force-cancel any pending async requests to clear the counter.
+	// cancel any requests still going async — they won't complete during shutdown
 	for _, conn in td.conns {
 		if conn.loop.res.work_data != nil {
 			log.warnf("shutdown: force canceling async request on connection %i", conn.socket)

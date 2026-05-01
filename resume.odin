@@ -5,10 +5,10 @@ import "core:log"
 import nbio "core:nbio"
 import mpsc "internal/mpsc"
 
-// Mark handler as async, stores req. information for background worker and resume stage.
-// Call this from your handler or body callback on the io thread.
-// Pass 'h' to make sure middleware resume works correctly.
-// work_data - used by background worker, if it does not need it, 1 is used instead of...
+// Tells the server this request is going async.
+// Call from your handler or body callback on the IO thread, before starting background work.
+// Pass h — the second call needs the right handler pointer, especially in a middleware chain.
+// work_data is available in the second call via res.work_data; use 1 if you don't need it.
 mark_async :: proc(h: ^Handler, res: ^Response, work_data: rawptr = rawptr(uintptr(1))) {
 	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
 		log.error("mark_async: invalid response or connection state")
@@ -23,8 +23,7 @@ mark_async :: proc(h: ^Handler, res: ^Response, work_data: rawptr = rawptr(uintp
 	if h != nil {
 		res.async_handler = h
 	} else if res.async_handler == nil {
-		// We need a handler pointer to resume correctly.
-		// If you are in a middleware chain, you MUST pass h.
+		// h must be set for the second call to reach the right handler
 		assert(false, "mark_async: h is nil and res.async_handler not set. Always pass h in middleware.")
 		res.async_handler = &res._conn.server.handler // fallback
 	}
@@ -34,9 +33,8 @@ mark_async :: proc(h: ^Handler, res: ^Response, work_data: rawptr = rawptr(uintp
 	log.debugf("mark_async: pending count is %d", intrinsics.atomic_load(&res._conn.owning_thread.async_pending))
 }
 
-// Roll back async intent if something fails before starting background work.
-// This fixes the pending counter so the server can shut down later.
-// You must also send an error response to the client.
+// Undoes mark_async when background work fails to start.
+// Also call http.respond — one tells the server, the other tells the client.
 cancel_async :: proc(res: ^Response) {
 	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
 		log.error("cancel_async: invalid response or connection state")
@@ -44,7 +42,7 @@ cancel_async :: proc(res: ^Response) {
 	}
 
 	if res.work_data == nil {
-		log.error("cancel_async called but response is not async. Ignoring to protect counter.")
+		log.error("cancel_async: response is not async, nothing to undo")
 		return
 	}
 
@@ -54,8 +52,8 @@ cancel_async :: proc(res: ^Response) {
 	res.async_handler = nil
 }
 
-// Tell the io thread that background work is done.
-// Safe to call from any thread. Do not touch 'res' after calling this.
+// Schedules the second handler call. Call from the background thread when work is done.
+// Don't touch res after this.
 resume :: proc(res: ^Response) {
 	if res == nil || res._conn == nil || res._conn.owning_thread == nil {
 		log.error("resume: invalid response or connection state")

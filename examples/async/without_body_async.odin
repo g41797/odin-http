@@ -18,20 +18,16 @@ Without_Body_Work :: struct {
 without_body_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Response) {
 	ctx := (^Without_Body_Context)(h.user_data)
 
-	// Part 1: first call on the IO thread.
 	if res.work_data == nil {
 		work := new(Without_Body_Work, ctx.alloc)
 		work.alloc = ctx.alloc
 
-		// mark_async before thread.start — if the thread calls resume before mark_async,
-		// async_pending is incremented after the decrement and shutdown hangs forever.
+		// mark_async before thread.start — resume must not schedule the second call before mark_async runs
 		http.mark_async(h, res, work)
 
 		t := thread.create(without_body_background_proc)
 		if t == nil {
-			// Two steps are both required on Part 1 failure:
-			// 1. cancel_async — rolls back async_pending; without this the server never shuts down.
-			// 2. http.respond — without this the client waits forever.
+			// both required: cancel_async tells the server, respond tells the client
 			http.cancel_async(res)
 			free(work, ctx.alloc)
 			http.respond(res, http.Status.Internal_Server_Error)
@@ -43,12 +39,9 @@ without_body_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Re
 		return
 	}
 
-	// Part 2: resume call on the IO thread.
 	work := (^Without_Body_Work)(res.work_data)
 	defer {
-		// thread.join here is fast — background thread already called resume, meaning it finished.
-		// res.work_data = nil tells the server the async cycle is finished.
-		thread.join(work.thread)
+		thread.join(work.thread) // the thread is already done — it called resume before we got here
 		thread.destroy(work.thread)
 		free(work, work.alloc)
 		res.work_data = nil
@@ -61,15 +54,13 @@ without_body_background_proc :: proc(t: ^thread.Thread) {
 	res := (^http.Response)(t.data)
 	work := (^Without_Body_Work)(res.work_data)
 
-	// context.temp_allocator is the per-connection arena — not thread-safe.
-	// Save and restore so this thread's allocation does not corrupt the IO thread's arena.
+	// context.temp_allocator is the connection's arena — not ours to use from a background thread
 	old_temp := context.temp_allocator
 	defer {context.temp_allocator = old_temp}
 
 	time.sleep(10 * time.Millisecond)
 
-	// Store all results in work BEFORE calling resume.
-	// After resume returns, the IO thread owns res — do not touch res or work.
+	// write result before calling resume — don't touch res after that
 	work.result = "hello from background"
 	http.resume(res)
 }

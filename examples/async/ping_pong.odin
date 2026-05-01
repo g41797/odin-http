@@ -2,9 +2,8 @@ package async_examples
 
 import http "../.."
 
-// Same-thread split pattern: both mark_async and resume are called on the IO thread
-// inside the body callback. No background thread is created.
-// Part 2 runs in the same event-loop tick as the callback.
+// No background thread. Body callback calls mark_async + resume directly on the IO thread,
+// inside nbio.tick(). The second handler call happens after tick() returns.
 
 Ping_Pong_Work :: struct {
 	body: string,
@@ -12,14 +11,12 @@ Ping_Pong_Work :: struct {
 
 ping_pong_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Response) {
 	if res.work_data == nil {
-		// Store h now — the body callback receives user_data (res), not h.
-		// Without this, the callback cannot call mark_async with the correct handler.
+		// body callback only gets user_data (res), not h
 		res.async_handler = h
 		http.body(req, -1, res, ping_pong_callback)
 		return
 	}
 
-	// Part 2: resume call on the IO thread (same tick as callback).
 	work := (^Ping_Pong_Work)(res.work_data)
 	defer {res.work_data = nil}
 
@@ -30,9 +27,7 @@ ping_pong_handler :: proc(h: ^http.Handler, req: ^http.Request, res: ^http.Respo
 	}
 }
 
-// ping_pong_callback runs on the IO thread inside scanner_on_read.
-// context.temp_allocator is already set to the connection arena — no save/restore needed.
-// mark_async + resume called synchronously here; no other thread is involved.
+// runs on the IO thread inside nbio.tick(); temp_allocator is already the connection arena
 ping_pong_callback :: proc(user_data: rawptr, body: http.Body, err: http.Body_Error) {
 	res := (^http.Response)(user_data)
 	if err != nil {
@@ -43,10 +38,9 @@ ping_pong_callback :: proc(user_data: rawptr, body: http.Body, err: http.Body_Er
 	work := new(Ping_Pong_Work, context.temp_allocator)
 	work.body = string(body)
 
-	// mark_async before resume — same ordering invariant as all patterns.
+	// mark_async before resume — same rule as the threaded patterns
 	http.mark_async(res.async_handler, res, work)
 
-	// resume on the IO thread: pushes res onto the queue and wakes the event loop.
-	// The loop processes it on the next tick, re-entering the handler at Part 2.
+	// schedules the second handler call — it runs after tick() returns
 	http.resume(res)
 }
