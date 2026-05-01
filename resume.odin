@@ -60,8 +60,9 @@ resume :: proc(res: ^Response) {
 	}
 
 	td := res._conn.owning_thread
+	event_loop := td.event_loop
 	msg: Maybe(^Response) = res
 	if mpsc.push(&td.resume_queue, &msg) {
-		nbio.wake_up(td.event_loop)
+		nbio.wake_up(event_loop)
 	}
 }
